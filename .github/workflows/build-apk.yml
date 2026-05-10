@@ -38,21 +38,17 @@ jobs:
       - name: 用 buildozer Docker 构建 APK
         run: |
           echo "🚀 开始构建 APK（约 15-30 分钟）..."
-          # 用 yes 自动回答 root 警告提示，并创建伪 TTY 避免 EOF 错误
-          docker run --rm -t \
+          # 先 patch 掉 buildozer 的 root 检查，避免交互式卡死
+          docker run --rm \
             -v "$(pwd):/app" \
             -v "$(pwd)/.buildozer:/home/user/.buildozer" \
             -w /app \
-            kivy/buildozer -v android debug 2>&1 || true
-          # 如果上面因 root 警告失败，用 yes 自动回答 y 重试
-          if [ ! -f bin/*.apk 2>/dev/null ]; then
-            echo "⚠️ 首次构建可能因 root 提示失败，用 yes 自动确认重试..."
-            yes y | docker run --rm \
-              -v "$(pwd):/app" \
-              -v "$(pwd)/.buildozer:/home/user/.buildozer" \
-              -w /app \
-              kivy/buildozer -v android debug 2>&1
-          fi
+            kivy/buildozer \
+            bash -c "
+              SITE=\$(python3 -c 'import buildozer, os; print(os.path.dirname(buildozer.__file__))')
+              sed -i 's/check_root()/True/' \"\$SITE/__init__.py\"
+              buildozer -v android debug
+            " 2>&1
 
       - name: 检查构建产物
         run: |
