@@ -10,6 +10,7 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,html,js,css,json
 source.exclude_exts = spec,ide,sh,bat,txt,md
 source.exclude_dirs = __pycache__, .git, .vscode, recipes
+source.main = main_android.py
 
 # 应用版本
 version = 0.1

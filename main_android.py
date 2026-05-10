@@ -277,16 +277,18 @@ def main():
         inference_url=INFERENCE_URL,
     )
 
-    # 注册信号处理
-    import signal
-    def handle_signal(sig, frame):
-        logger.info("正在停止服务...")
-        if transcriber.is_recording:
-            transcriber._on_stop_recording()
-        sys.exit(0)
-
-    signal.signal(signal.SIGINT, handle_signal)
-    signal.signal(signal.SIGTERM, handle_signal)
+    # 注册信号处理（Android 上 signal 支持不完整，忽略异常）
+    try:
+        import signal
+        def handle_signal(sig, frame):
+            logger.info("正在停止服务...")
+            if transcriber.is_recording:
+                transcriber._on_stop_recording()
+            sys.exit(0)
+        signal.signal(signal.SIGINT, handle_signal)
+        signal.signal(signal.SIGTERM, handle_signal)
+    except Exception:
+        pass
 
     transcriber.run()
 
