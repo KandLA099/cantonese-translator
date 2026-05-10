@@ -39,12 +39,14 @@ jobs:
         run: |
           echo "🚀 开始构建 APK（约 15-30 分钟）..."
           # 先 patch 掉 buildozer 的 root 检查，避免交互式卡死
+          # 注意：必须用 --entrypoint 覆盖镜像默认的 buildozer entrypoint
           docker run --rm \
             -v "$(pwd):/app" \
             -v "$(pwd)/.buildozer:/home/user/.buildozer" \
             -w /app \
+            --entrypoint bash \
             kivy/buildozer \
-            bash -c "
+            -c "
               SITE=\$(python3 -c 'import buildozer, os; print(os.path.dirname(buildozer.__file__))')
               sed -i 's/check_root()/True/' \"\$SITE/__init__.py\"
               buildozer -v android debug
