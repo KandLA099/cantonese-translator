@@ -48,7 +48,7 @@ jobs:
             kivy/buildozer \
             -c "
               SITE=\$(python3 -c 'import buildozer, os; print(os.path.dirname(buildozer.__file__))')
-              sed -i 's/check_root()/True/' \"\$SITE/__init__.py\"
+              sed -i 's/self\.check_root()/True/' \"\$SITE/__init__.py\"
               buildozer -v android debug
             " 2>&1
 
