@@ -17,7 +17,7 @@ version.code = 1
 
 # 依赖（python-for-android 会自动处理这些）
 # onnxruntime 没有 Android wheel，推理跑在 Termux 独立进程
-requirements = python3==3.11.9, flask, flask-socketio, numpy, pyjnius, python-socketio, werkzeug
+requirements = python3, flask, flask-socketio, numpy, pyjnius, werkzeug
 
 # 权限（录音 + 网络 + 本地通信）
 android.permissions = RECORD_AUDIO, INTERNET, ACCESS_NETWORK_STATE
