@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#1A1D23">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>粤语实时翻译</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- ====== 顶部状态栏 ====== -->
+        <header id="status-bar">
+            <div class="status-left">
+                <span id="status-dot" class="dot dot-offline"></span>
+                <span id="status-text" class="status-label">已就绪</span>
+            </div>
+            <div class="status-center">
+                <span id="timer-display" class="timer">00:00</span>
+            </div>
+            <div class="status-right">
+                <div id="level-meter" class="level-meter">
+                    <div class="level-bar" style="height: 0%"></div>
+                </div>
+            </div>
+        </header>
+
+        <!-- ====== 翻译结果显示区 ====== -->
+        <main id="translation-area" class="translation-area">
+            <div id="empty-state" class="empty-state">
+                <div class="empty-icon">🎙️</div>
+                <div class="empty-title">点击「开始」进行粤语实时翻译</div>
+                <div class="empty-hint">识别结果将实时显示在此处</div>
+            </div>
+            <div id="results-container" class="results-container"></div>
+        </main>
+
+        <!-- ====== 底部控制栏 ====== -->
+        <footer id="control-bar" class="control-bar">
+            <button id="btn-clear" class="btn btn-icon" title="清空结果" aria-label="清空">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 6 5 6 21 6"></polyline>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
+                    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                    <line x1="10" y1="11" x2="10" y2="17"></line>
+                    <line x1="14" y1="11" x2="14" y2="17"></line>
+                </svg>
+            </button>
+
+            <button id="btn-record" class="btn btn-record" aria-label="开始录音">
+                <div class="record-inner">
+                    <svg class="mic-icon" viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                        <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                        <line x1="12" y1="19" x2="12" y2="23"></line>
+                        <line x1="8" y1="23" x2="16" y2="23"></line>
+                    </svg>
+                </div>
+                <span class="btn-label" id="btn-label">开始</span>
+            </button>
+
+            <button id="btn-settings" class="btn btn-icon" title="设置" aria-label="设置" style="visibility:hidden">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"></path>
+                </svg>
+            </button>
+        </footer>
+    </div>
+
+    <!-- ====== SocketIO 客户端 + 应用逻辑 ====== -->
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js"></script>
+    <script src="/static/app.js"></script>
+</body>
+</html>

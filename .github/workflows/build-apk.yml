@@ -1,0 +1,60 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - '**.py'
+      - '**.html'
+      - '**.js'
+      - '**.css'
+      - 'buildozer.spec'
+      - '.github/workflows/build-apk.yml'
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:  # 手动触发
+
+env:
+  APK_NAME: cantonesetranslator-0.1-arm64-v8a-debug.apk
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 检查 buildozer.spec
+        run: |
+          echo "✅ buildozer.spec 存在: $(ls -la buildozer.spec)"
+          echo "📋 应用名称: $(grep '^title' buildozer.spec | head -1)"
+          echo "📋 包名: $(grep '^package.name' buildozer.spec | head -1)"
+
+      - name: 列出项目文件
+        run: |
+          echo "📂 项目文件列表:"
+          find . -name '*.py' -o -name '*.html' -o -name '*.spec' | grep -v __pycache__
+
+      - name: 用 buildozer Docker 构建 APK
+        run: |
+          echo "🚀 开始构建 APK（约 15-30 分钟）..."
+          docker run --rm \
+            -v "$(pwd):/app" \
+            -v "$(pwd)/.buildozer:/home/user/.buildozer" \
+            kivy/buildozer -v android debug 2>&1
+
+      - name: 检查构建产物
+        run: |
+          echo "📦 检查 APK 文件..."
+          ls -la bin/ 2>/dev/null || echo "bin/ 目录不存在"
+          find . -name '*.apk' -type f 2>/dev/null
+
+      - name: 上传 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: cantonesetranslator-apk
+          path: |
+            bin/*.apk
+            *.apk
+          if-no-files-found: warn
+          retention-days: 7

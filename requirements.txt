@@ -1,0 +1,23 @@
+# ============================================================
+# 粤语实时翻译工具 - Python 依赖
+# 安装命令: pip install -r requirements.txt
+# ============================================================
+
+# --- Web 服务 ---
+flask==3.1.*
+flask-socketio==5.5.*
+
+# --- 音频处理 ---
+numpy==2.2.*
+scipy==1.15.*
+webrtcvad==2.0.*
+soundfile==0.13.*
+
+# --- ASR 推理（ONNX Runtime） ---
+# Termux (aarch64) 请安装: pip install onnxruntime
+# 如果标准包安装失败，尝试:
+#   pip install onnxruntime-silicon  # 支持 NPU 加速
+onnxruntime>=1.20,<2.0
+
+# --- 模型下载辅助 ---
+requests>=2.32

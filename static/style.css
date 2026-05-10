@@ -1,0 +1,499 @@
+/* ============================================================
+   style.css — 粤语实时翻译 深色全屏主题
+   ============================================================
+   设计原则: 深色底、大字体、少装饰、阅读优先
+   ============================================================ */
+
+/* ---------- CSS 变量 ---------- */
+:root {
+    --bg-primary: #1A1D23;
+    --bg-secondary: #242830;
+    --bg-tertiary: #2D313A;
+    --bg-hover: #363A45;
+    --text-primary: #FFFFFF;
+    --text-secondary: #B0B8C1;
+    --text-muted: #6B7280;
+    --accent-green: #00D68F;
+    --accent-blue: #0095FF;
+    --accent-red: #FF4D4F;
+    --accent-yellow: #FAAD14;
+    --radius-sm: 8px;
+    --radius-md: 14px;
+    --radius-lg: 20px;
+    --radius-full: 9999px;
+    --shadow-card: 0 4px 12px rgba(0, 0, 0, 0.3);
+    --font-main: -apple-system, "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+}
+
+/* ---------- 全局重置 ---------- */
+*, *::before, *::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body {
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    font-family: var(--font-main);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+button {
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-family: inherit;
+    outline: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* ============================================================
+   布局
+   ============================================================ */
+
+#app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh; /* 动态视口高度（移动端地址栏适配） */
+    width: 100vw;
+    overflow: hidden;
+}
+
+/* ============================================================
+   顶部状态栏
+   ============================================================ */
+
+#status-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    padding-top: max(12px, env(safe-area-inset-top));
+    background: var(--bg-secondary);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    flex-shrink: 0;
+    min-height: 48px;
+    z-index: 10;
+}
+
+.status-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 80px;
+}
+
+.status-center {
+    flex: 1;
+    text-align: center;
+}
+
+.status-right {
+    display: flex;
+    align-items: center;
+    min-width: 80px;
+    justify-content: flex-end;
+}
+
+/* 状态指示灯 */
+.dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    transition: all 0.3s ease;
+}
+
+.dot-offline {
+    background: var(--text-muted);
+    box-shadow: none;
+}
+
+.dot-online {
+    background: var(--accent-green);
+    box-shadow: 0 0 8px var(--accent-green);
+    animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.7; transform: scale(1.15); }
+}
+
+.status-label {
+    font-size: 13px;
+    color: var(--text-secondary);
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+/* 计时器 */
+.timer {
+    font-size: 16px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+    letter-spacing: 1px;
+}
+
+/* 电平表 */
+.level-meter {
+    width: 36px;
+    height: 20px;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    position: relative;
+    opacity: 0.4;
+    transition: opacity 0.3s;
+}
+
+.level-meter.active {
+    opacity: 1;
+}
+
+.level-bar {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background: linear-gradient(to top, var(--accent-green), var(--accent-blue));
+    border-radius: 0 var(--radius-sm) var(--radius-sm) var(--radius-sm);
+    transition: height 0.15s ease;
+}
+
+/* ============================================================
+   翻译主区域
+   ============================================================ */
+
+.translation-area {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    padding: 8px 12px;
+    padding-bottom: 0;
+}
+
+.results-container {
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 12px;
+}
+
+/* 自定义滚动条 */
+.results-container::-webkit-scrollbar {
+    width: 3px;
+}
+
+.results-container::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.results-container::-webkit-scrollbar-thumb {
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-full);
+}
+
+/* ---------- 空状态 ---------- */
+.empty-state {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    pointer-events: none;
+    transition: opacity 0.4s ease;
+}
+
+.empty-state.hidden {
+    opacity: 0;
+}
+
+.empty-icon {
+    font-size: 48px;
+    margin-bottom: 16px;
+    opacity: 0.6;
+}
+
+.empty-title {
+    font-size: 16px;
+    color: var(--text-secondary);
+    font-weight: 500;
+    margin-bottom: 8px;
+}
+
+.empty-hint {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+/* ---------- 翻译结果卡片 ---------- */
+.result-item {
+    background: var(--bg-secondary);
+    border-radius: var(--radius-md);
+    padding: 14px 16px;
+    margin-bottom: 8px;
+    animation: slideIn 0.3s ease-out;
+    transition: all 0.2s ease;
+    border: 1px solid transparent;
+}
+
+.result-item.interim {
+    border-color: rgba(0, 214, 143, 0.15);
+    background: var(--bg-tertiary);
+}
+
+.result-item.current {
+    border-color: rgba(0, 149, 255, 0.2);
+}
+
+.result-text {
+    font-size: 24px;
+    line-height: 1.5;
+    color: var(--text-primary);
+    font-weight: 400;
+    word-break: break-word;
+}
+
+.result-text.interim-text {
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.result-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 6px;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.segment-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: var(--radius-sm);
+    background: rgba(0, 214, 143, 0.12);
+    color: var(--accent-green);
+    font-size: 10px;
+    font-weight: 600;
+}
+
+/* 段分隔线 */
+.segment-divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 16px 0 10px;
+    color: var(--text-muted);
+    font-size: 11px;
+    animation: fadeIn 0.3s ease;
+}
+
+.segment-divider::before,
+.segment-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--bg-tertiary);
+}
+
+/* ---------- 动画 ---------- */
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/* ---------- 错误显示 ---------- */
+.error-toast {
+    position: fixed;
+    top: 60px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(255, 77, 79, 0.95);
+    color: white;
+    padding: 10px 20px;
+    border-radius: var(--radius-full);
+    font-size: 14px;
+    font-weight: 500;
+    z-index: 100;
+    animation: slideDown 0.3s ease-out;
+    pointer-events: none;
+    max-width: 90%;
+    text-align: center;
+}
+
+@keyframes slideDown {
+    from { transform: translateX(-50%) translateY(-20px); opacity: 0; }
+    to { transform: translateX(-50%) translateY(0); opacity: 1; }
+}
+
+/* ============================================================
+   底部控制栏
+   ============================================================ */
+
+.control-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    padding: 12px 24px;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+    background: var(--bg-secondary);
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    flex-shrink: 0;
+    z-index: 10;
+}
+
+/* 图标按钮（清空/设置） */
+.btn-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.btn-icon:active {
+    background: var(--bg-hover);
+    color: var(--text-secondary);
+    transform: scale(0.92);
+}
+
+/* 录音主按钮 */
+.btn-record {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: var(--accent-green);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    flex-shrink: 0;
+    box-shadow: 0 4px 16px rgba(0, 214, 143, 0.3);
+}
+
+.btn-record:active {
+    transform: scale(0.92);
+}
+
+/* 录音中状态 */
+.btn-record.recording {
+    background: var(--accent-red);
+    box-shadow: 0 4px 16px rgba(255, 77, 79, 0.3);
+}
+
+.btn-record.recording .mic-icon {
+    animation: mic-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes mic-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+.record-inner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.9);
+    letter-spacing: 0.5px;
+}
+
+/* 录音按钮脉冲光环 */
+.btn-record::before {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    border: 2px solid var(--accent-green);
+    opacity: 0;
+    transition: all 0.3s ease;
+}
+
+.btn-record.recording::before {
+    opacity: 1;
+    animation: ring-pulse 1.5s ease-out infinite;
+}
+
+@keyframes ring-pulse {
+    0% { transform: scale(1); opacity: 0.5; }
+    100% { transform: scale(1.25); opacity: 0; }
+}
+
+/* ============================================================
+   响应式
+   ============================================================ */
+
+/* 横屏模式 */
+@media (orientation: landscape) {
+    .result-text {
+        font-size: 22px;
+    }
+
+    .btn-record {
+        width: 64px;
+        height: 64px;
+    }
+
+    .control-bar {
+        padding: 8px 24px;
+    }
+}
+
+/* 平板及以上 */
+@media (min-width: 768px) {
+    .result-text {
+        font-size: 28px;
+    }
+
+    #status-bar,
+    .control-bar {
+        padding-left: 24px;
+        padding-right: 24px;
+    }
+
+    .translation-area {
+        padding: 16px 24px;
+    }
+}
+
+/* 深色模式偏好（默认已经是深色，这里适配浅色系统强行深色） */
+@media (prefers-color-scheme: light) {
+    /* 保持深色不变 */
+}

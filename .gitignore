@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+*.whl
+
+# Buildozer
+.buildozer/
+bin/
+*.apk
+
+# IDE
+.vscode/
+.idea/
+
+# Model files (too large for git)
+models/*.onnx
+models/*.ort
+models/*.bin
