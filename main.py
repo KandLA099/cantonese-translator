@@ -34,7 +34,30 @@ import os
 import sys
 import threading
 import time
+import traceback
 from typing import Optional
+
+# ── 崩溃日志捕获（最早执行，确保闪退也能记录） ──────────
+_CRASH_LOG_PATH = "/sdcard/cantonese_crash.log"
+
+def _write_crash_log(exc_type, exc_value, exc_tb):
+    """未捕获异常时写入崩溃日志到 /sdcard/。"""
+    try:
+        tb_text = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+        with open(_CRASH_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(f"\n{'='*60}\n")
+            f.write(f"CRASH at {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"{'='*60}\n")
+            f.write(tb_text)
+            f.write("\n")
+        # 也打印到 stdout（让 adb logcat 也能看到）
+        print(f"[CRASH] {exc_type.__name__}: {exc_value}")
+        print(tb_text)
+    except Exception:
+        pass  # 日志写入失败就算了，别再抛异常
+
+# 设置全局未捕获异常处理
+sys.excepthook = _write_crash_log
 
 # ── 日志 ──────────────────────────────────────────────
 logging.basicConfig(
@@ -43,6 +66,18 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger("main_android")
+
+# ── 同时将日志写入文件（/sdcard/ 下可查看） ──────────
+try:
+    _file_handler = logging.FileHandler(_CRASH_LOG_PATH, encoding="utf-8")
+    _file_handler.setLevel(logging.INFO)
+    _file_handler.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    ))
+    logging.getLogger().addHandler(_file_handler)
+    logger.info("崩溃日志已启用，写入: %s", _CRASH_LOG_PATH)
+except Exception as e:
+    logger.warning("无法创建文件日志: %s（非 Android 环境？）", e)
 
 # 降低第三方库日志噪音
 logging.getLogger("socketio").setLevel(logging.WARNING)
@@ -294,4 +329,12 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        # 记录启动信息
+        logger.info("APK 启动，Python: %s, 平台: %s", sys.version, sys.platform)
+        main()
+    except Exception as e:
+        # 兜底：任何未捕获异常都写入崩溃日志
+        _write_crash_log(type(e), e, e.__traceback__)
+        # 尝试保持进程存活 5 秒，让日志写入完成
+        time.sleep(5)

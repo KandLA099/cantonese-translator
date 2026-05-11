@@ -22,8 +22,8 @@ version.code = 1
 # onnxruntime 没有 Android wheel，推理跑在 Termux 独立进程
 requirements = python3, flask, flask-socketio, numpy, pyjnius, werkzeug
 
-# 权限（录音 + 网络 + 本地通信）
-android.permissions = RECORD_AUDIO, INTERNET, ACCESS_NETWORK_STATE
+# 权限（录音 + 网络 + 本地通信 + 外部存储写日志）
+android.permissions = RECORD_AUDIO, INTERNET, ACCESS_NETWORK_STATE, WRITE_EXTERNAL_STORAGE
 
 # Android API 配置
 android.api = 34
