@@ -36,6 +36,9 @@ android.enable_androidx = True
 android.multidex = False
 android.allow_backup = False
 
+# 竖屏显示
+orientation = portrait
+
 # Python-for-android 配置
 p4a.branch = develop
 p4a.allow_presplash = True
