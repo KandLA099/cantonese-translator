@@ -10,7 +10,9 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,html,js,css,json
 source.exclude_exts = spec,ide,sh,bat,txt,md
 source.exclude_dirs = __pycache__, .git, .vscode, recipes
-source.main = main_android.py
+
+# 排除桌面版文件（依赖 onnxruntime，APK 中不可用会闪退）
+source.exclude = main_desktop.py, main_android.py, asr_engine.py, asr_engine_android.py, inference_server.py
 
 # 应用版本
 version = 0.1
