@@ -38,23 +38,38 @@ import traceback
 from typing import Optional
 
 # ── 崩溃日志捕获（最早执行，确保闪退也能记录） ──────────
-_CRASH_LOG_PATH = "/sdcard/cantonese_crash.log"
+def _get_log_path():
+    """获取可写入的日志路径（Android 上优先用应用私有目录）。"""
+    for path in [
+        os.environ.get("ANDROID_PRIVATE"),
+        os.environ.get("EXTERNAL_STORAGE"),
+        "/data/local/tmp",
+        "/sdcard",
+    ]:
+        if path and os.access(path, os.W_OK):
+            return os.path.join(path, "cantonese_crash.log")
+    return "/data/local/tmp/cantonese_crash.log"
+
+_CRASH_LOG_PATH = _get_log_path()
 
 def _write_crash_log(exc_type, exc_value, exc_tb):
-    """未捕获异常时写入崩溃日志到 /sdcard/。"""
+    """未捕获异常时写入崩溃日志。"""
+    tb_text = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    # 打印到 stdout（adb logcat 能看到）
+    print(f"\n!!!!! CRASH {exc_type.__name__}: {exc_value}", flush=True)
+    for line in tb_text.splitlines():
+        print(f"[CRASH] {line}", flush=True)
+    # 尝试写入文件
     try:
-        tb_text = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
         with open(_CRASH_LOG_PATH, "a", encoding="utf-8") as f:
             f.write(f"\n{'='*60}\n")
             f.write(f"CRASH at {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"[PID {os.getpid()}] {exc_type.__name__}: {exc_value}\n")
             f.write(f"{'='*60}\n")
             f.write(tb_text)
             f.write("\n")
-        # 也打印到 stdout（让 adb logcat 也能看到）
-        print(f"[CRASH] {exc_type.__name__}: {exc_value}")
-        print(tb_text)
     except Exception:
-        pass  # 日志写入失败就算了，别再抛异常
+        pass
 
 # 设置全局未捕获异常处理
 sys.excepthook = _write_crash_log
@@ -67,7 +82,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("main_android")
 
-# ── 同时将日志写入文件（/sdcard/ 下可查看） ──────────
+# ── 同时将日志写入文件 ────────────────────────────────
 try:
     _file_handler = logging.FileHandler(_CRASH_LOG_PATH, encoding="utf-8")
     _file_handler.setLevel(logging.INFO)
@@ -77,7 +92,7 @@ try:
     logging.getLogger().addHandler(_file_handler)
     logger.info("崩溃日志已启用，写入: %s", _CRASH_LOG_PATH)
 except Exception as e:
-    logger.warning("无法创建文件日志: %s（非 Android 环境？）", e)
+    logger.warning("无法创建文件日志: %s", e)
 
 # 降低第三方库日志噪音
 logging.getLogger("socketio").setLevel(logging.WARNING)
@@ -93,20 +108,25 @@ INFERENCE_URL = f"http://{INFERENCE_HOST}:{INFERENCE_PORT}"
 try:
     from android_audio import AndroidAudioCapture, get_audio_capture
     _HAS_ANDROID = True
-except ImportError:
+    logger.info("Android 音频模块已加载")
+except ImportError as e:
     _HAS_ANDROID = False
     AndroidAudioCapture = None
+    logger.warning("Android 音频模块不可用: %s", e)
 
 from audio_capture import AudioCapture
 from audio_processor import AudioProcessor
 from web_server import TranslationServer
+
+logger.info("Python %s | PID %d | 平台: %s", sys.version, os.getpid(), sys.platform)
+logger.info("日志路径: %s", _CRASH_LOG_PATH)
 
 
 class AndroidTranscriber:
     """
     Android 端主控制器。
 
-    采集音频 → 发送到推理服务器 → 收到文字 → 显示在 UI 上。
+    采集音频 -> 发送到推理服务器 -> 收到文字 -> 显示在 UI 上。
 
     与桌面版 Transcriber 的区别:
       - 不加载 ASR 模型（推理在 Termux 上）
@@ -147,6 +167,7 @@ class AndroidTranscriber:
         print("  粤语实时翻译 - Android 版")
         print(f"  Web UI:      http://{self.server.host}:{self.server.port}")
         print(f"  推理服务器:  {self.inference_url}")
+        print(f"  崩溃日志:    {_CRASH_LOG_PATH}")
         print("=" * 50)
         print()
         self.server.run()
@@ -214,7 +235,7 @@ class AndroidTranscriber:
     # ── 核心处理循环 ──────────────────────────────────
 
     def _process_loop(self):
-        """音频采集 → 发送推理 → 显示结果。"""
+        """音频采集 -> 发送推理 -> 显示结果。"""
         logger.info("处理线程已启动")
 
         while self._recording and not self._stop_event.is_set():
