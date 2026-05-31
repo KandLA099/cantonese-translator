@@ -1,45 +1,48 @@
 #!/usr/bin/env python3
 """
-main_android.py — Android 应用主入口
-=====================================
+main.py — 粤语实时翻译 Android 主程序 (Kivy SDL2)
+=================================================
 
-架构说明:
-  本 APK 只做两件事:
-    1. 音频采集 (通过 android_audio.AndroidAudioCapture)
-    2. 显示 Web UI (通过 Flask-SocketIO)
-
-  ASR 推理由独立进程处理 — inference_server.py 在 Termux 中运行。
-  APK 采集音频后，通过 HTTP 发送到推理服务器，返回结果后显示在 UI 上。
-
-工作原理:
-  APK (端口 5000)         推理服务器 (端口 5001)
-  ┌─────────────────┐     ┌──────────────────────┐
-  │ Web UI          │     │ onnxruntime          │
-  │ (SocketIO 前端) │     │ SenseVoice 模型       │
-  │                 │     │                      │
-  │ AudioRecord     │────→│ POST /transcribe     │
-  │ 采集音频         │     │ 返回识别文字          │
-  └─────────────────┘     └──────────────────────┘
-
-使用:
-  1. 在 Termux 中启动推理服务器:
-     python inference_server.py
-
-  2. 启动 APK（自动连接推理服务器）
+架构 vs 旧版（Flask+WebView）:
+  - 删掉 Flask/SocketIO/WebView，换 Kivy 原生 UI
+  - 用 SDL2 bootstrap，兼容性远好于 webview
+  - 音频采集走 pyjnius AudioRecord
+  - 推理走 HTTP 请求 Termux 上的推理服务器
 """
 
 import base64
+import json
 import logging
 import os
 import sys
 import threading
 import time
 import traceback
+import queue
+import urllib.request
 from typing import Optional
 
-# ── 崩溃日志捕获（最早执行，确保闪退也能记录） ──────────
+# Kivy 环境变量（必须在 kivy import 前）
+os.environ.setdefault("KIVY_NO_ARGS", "1")
+
+import kivy
+kivy.require("2.3.0")
+
+from kivy.app import App
+from kivy.clock import Clock
+from kivy.core.window import Window
+from kivy.graphics import Color, Rectangle
+from kivy.metrics import dp
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.button import Button
+from kivy.uix.label import Label
+from kivy.uix.scrollview import ScrollView
+from kivy.uix.gridlayout import GridLayout
+from kivy.uix.widget import Widget
+from kivy.utils import get_color_from_hex
+
+# ── 崩溃日志捕获 ──────────────────────────────────────
 def _get_log_path():
-    """获取可写入的日志路径（Android 上优先用应用私有目录）。"""
     for path in [
         os.environ.get("ANDROID_PRIVATE"),
         os.environ.get("EXTERNAL_STORAGE"),
@@ -53,309 +56,354 @@ def _get_log_path():
 _CRASH_LOG_PATH = _get_log_path()
 
 def _write_crash_log(exc_type, exc_value, exc_tb):
-    """未捕获异常时写入崩溃日志。"""
     tb_text = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
-    # 打印到 stdout（adb logcat 能看到）
     print(f"\n!!!!! CRASH {exc_type.__name__}: {exc_value}", flush=True)
     for line in tb_text.splitlines():
         print(f"[CRASH] {line}", flush=True)
-    # 尝试写入文件
     try:
         with open(_CRASH_LOG_PATH, "a", encoding="utf-8") as f:
-            f.write(f"\n{'='*60}\n")
-            f.write(f"CRASH at {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"[PID {os.getpid()}] {exc_type.__name__}: {exc_value}\n")
-            f.write(f"{'='*60}\n")
-            f.write(tb_text)
-            f.write("\n")
+            f.write(f"\n{'='*60}\nCRASH at {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write(f"[PID {os.getpid()}] {exc_type.__name__}: {exc_value}\n{'='*60}\n")
+            f.write(tb_text + "\n")
     except Exception:
         pass
 
-# 设置全局未捕获异常处理
 sys.excepthook = _write_crash_log
 
 # ── 日志 ──────────────────────────────────────────────
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%H:%M:%S",
-)
-logger = logging.getLogger("main_android")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+logger = logging.getLogger("main")
 
-# ── 同时将日志写入文件 ────────────────────────────────
 try:
-    _file_handler = logging.FileHandler(_CRASH_LOG_PATH, encoding="utf-8")
-    _file_handler.setLevel(logging.INFO)
-    _file_handler.setFormatter(logging.Formatter(
-        "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-    ))
-    logging.getLogger().addHandler(_file_handler)
-    logger.info("崩溃日志已启用，写入: %s", _CRASH_LOG_PATH)
-except Exception as e:
-    logger.warning("无法创建文件日志: %s", e)
-
-# 降低第三方库日志噪音
-logging.getLogger("socketio").setLevel(logging.WARNING)
-logging.getLogger("engineio").setLevel(logging.WARNING)
-logging.getLogger("werkzeug").setLevel(logging.WARNING)
+    _fh = logging.FileHandler(_CRASH_LOG_PATH, encoding="utf-8")
+    _fh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+    logging.getLogger().addHandler(_fh)
+except Exception:
+    pass
 
 # ── 配置 ──────────────────────────────────────────────
-INFERENCE_HOST = os.environ.get("INFERENCE_HOST", "127.0.0.1")
-INFERENCE_PORT = int(os.environ.get("INFERENCE_PORT", "5001"))
-INFERENCE_URL = f"http://{INFERENCE_HOST}:{INFERENCE_PORT}"
+INFERENCE_URL = f"http://{os.environ.get('INFERENCE_HOST', '127.0.0.1')}:{os.environ.get('INFERENCE_PORT', '5001')}"
 
 # ── Android 检测 ─────────────────────────────────────
+_HAS_ANDROID = False
 try:
-    from android_audio import AndroidAudioCapture, get_audio_capture
+    from android_audio import AndroidAudioCapture
     _HAS_ANDROID = True
     logger.info("Android 音频模块已加载")
 except ImportError as e:
-    _HAS_ANDROID = False
-    AndroidAudioCapture = None
     logger.warning("Android 音频模块不可用: %s", e)
 
-from audio_capture import AudioCapture
 from audio_processor import AudioProcessor
-from web_server import TranslationServer
 
-logger.info("Python %s | PID %d | 平台: %s", sys.version, os.getpid(), sys.platform)
-logger.info("日志路径: %s", _CRASH_LOG_PATH)
+# ============================================================
+# 颜色
+# ============================================================
+BG = get_color_from_hex("#1A1D23")
+SURFACE = get_color_from_hex("#262A34")
+GREEN = get_color_from_hex("#4CAF50")
+GREEN_D = get_color_from_hex("#388E3C")
+TEXT = get_color_from_hex("#E8EAED")
+DIM = get_color_from_hex("#9AA0A6")
+RED = get_color_from_hex("#FF4D4F")
+YELLOW = get_color_from_hex("#FAAD14")
 
 
-class AndroidTranscriber:
-    """
-    Android 端主控制器。
+# ============================================================
+# 小部件
+# ============================================================
 
-    采集音频 -> 发送到推理服务器 -> 收到文字 -> 显示在 UI 上。
+class LevelBar(Widget):
+    """音频电平指示条（竖条）。"""
+    level = 0.0  # 0-100
 
-    与桌面版 Transcriber 的区别:
-      - 不加载 ASR 模型（推理在 Termux 上）
-      - 通过 HTTP 发送音频到推理服务器
-      - 音频采集使用 Android AudioRecord
-    """
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.bind(pos=self._redraw, size=self._redraw, level=self._redraw)
 
-    def __init__(
-        self,
-        host: str = "127.0.0.1",
-        port: int = 5000,
-        inference_url: str = INFERENCE_URL,
-        debug: bool = False,
-    ):
-        self.inference_url = inference_url
+    def _redraw(self, *args):
+        self.canvas.clear()
+        with self.canvas:
+            Color(0.2, 0.2, 0.2, 1)
+            Rectangle(pos=self.pos, size=self.size)
+            h = self.height * min(self.level / 100.0, 1.0)
+            if self.level > 80:
+                Color(*RED)
+            elif self.level > 50:
+                Color(*YELLOW)
+            else:
+                Color(*GREEN)
+            Rectangle(pos=(self.x, self.y), size=(self.width, h))
 
-        # 音频采集
-        self.capture: Optional[AudioCapture] = None
-        self.processor = AudioProcessor()
 
-        # Web 服务器
-        self.server = TranslationServer(host=host, port=port, debug=debug)
+# ============================================================
+# 主 UI
+# ============================================================
+
+class TranslatorUI(BoxLayout):
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = "vertical"
+        self.padding = 0
+        self.spacing = 0
 
         # 状态
-        self._recording = False
-        self._processing_thread: Optional[threading.Thread] = None
+        self.is_recording = False
+        self.start_time = 0
+        self.last_text = ""
+        self.results_count = 0
+
+        # 音频
+        self.capture = None
+        self.processor = AudioProcessor()
         self._stop_event = threading.Event()
+        self._processing_thread = None
+        self._timer_event = None
 
-        # 注册 WebSocket 回调
-        self.server.on_start_recording = self._on_start_recording
-        self.server.on_stop_recording = self._on_stop_recording
-        self.server.on_clear_results = self._on_clear_results
+        self._build_ui()
 
-    def run(self):
-        """启动 Web 服务器（阻塞）。"""
-        print()
-        print("=" * 50)
-        print("  粤语实时翻译 - Android 版")
-        print(f"  Web UI:      http://{self.server.host}:{self.server.port}")
-        print(f"  推理服务器:  {self.inference_url}")
-        print(f"  崩溃日志:    {_CRASH_LOG_PATH}")
-        print("=" * 50)
-        print()
-        self.server.run()
+    def _build_ui(self):
+        # ─── 顶栏 ───────────────────────────────
+        top = BoxLayout(size_hint_y=None, height=dp(56), spacing=dp(8), padding=[dp(12), dp(8)])
+        top.bind(pos=self._draw_top, size=self._draw_top)
 
-    # ── WebSocket 回调 ────────────────────────────────
+        self.dot = Label(text="●", color=DIM, font_size=dp(14), size_hint_x=None, width=dp(20))
+        self.st_label = Label(text="就绪", color=DIM, font_size=dp(13), halign="left")
+        st_box = BoxLayout(orientation="horizontal", size_hint_x=0.3, spacing=dp(4))
+        st_box.add_widget(self.dot)
+        st_box.add_widget(self.st_label)
 
-    def _on_start_recording(self):
-        if self._recording:
-            logger.warning("已在录音中")
+        self.timer = Label(text="00:00", color=TEXT, font_size=dp(22), bold=True, size_hint_x=0.4)
+
+        self.lbar = LevelBar(size_hint_x=0.3, size_hint_y=None, height=dp(40))
+
+        top.add_widget(st_box)
+        top.add_widget(self.timer)
+        top.add_widget(self.lbar)
+
+        # ─── 结果区 ─────────────────────────────
+        self.res_grid = GridLayout(cols=1, spacing=dp(2), size_hint_y=None, padding=[0, dp(8)])
+        self.res_grid.bind(minimum_height=self.res_grid.setter("height"))
+
+        self.empty_lbl = Label(
+            text="点击「开始」进行粤语实时翻译\n识别结果将显示在此处",
+            color=DIM, font_size=dp(16), halign="center", valign="middle",
+        )
+        self.res_grid.add_widget(self.empty_lbl)
+
+        sv = ScrollView()
+        sv.add_widget(self.res_grid)
+
+        # ─── 底栏 ───────────────────────────────
+        bot = BoxLayout(size_hint_y=None, height=dp(80), spacing=dp(20), padding=[dp(20), dp(10)])
+        bot.bind(pos=self._draw_bot, size=self._draw_bot)
+
+        self.btn_clr = Button(text="清空", font_size=dp(16), size_hint=(0.3, 1),
+                              background_normal="", background_color=get_color_from_hex("#444"), color=TEXT)
+        self.btn_clr.bind(on_press=self.on_clear)
+
+        self.btn_rec = Button(text="开始", font_size=dp(20), size_hint=(0.5, 1),
+                              background_normal="", background_color=GREEN, color=TEXT)
+        self.btn_rec.bind(on_press=self.on_record_toggle)
+
+        bot.add_widget(self.btn_clr)
+        bot.add_widget(self.btn_rec)
+        bot.add_widget(Widget(size_hint_x=0.2))
+
+        self.add_widget(top)
+        self.add_widget(sv)
+        self.add_widget(bot)
+
+    # ─── 顶栏/底栏背景 ───────────────────────────
+    def _draw_top(self, w, *a):
+        w.canvas.before.clear()
+        with w.canvas.before:
+            Color(*SURFACE)
+            Rectangle(pos=w.pos, size=w.size)
+
+    def _draw_bot(self, w, *a):
+        w.canvas.before.clear()
+        with w.canvas.before:
+            Color(*SURFACE)
+            Rectangle(pos=w.pos, size=w.size)
+
+    # ─── 按钮事件 ────────────────────────────────
+    def on_record_toggle(self, _):
+        if self.is_recording:
+            self.stop_recording()
+        else:
+            self.start_recording()
+
+    def on_clear(self, _):
+        self.res_grid.clear_widgets()
+        self.empty_lbl = Label(text="点击「开始」进行粤语实时翻译\n识别结果将显示在此处",
+                               color=DIM, font_size=dp(16), halign="center", valign="middle")
+        self.res_grid.add_widget(self.empty_lbl)
+        self.last_text = ""
+        self.results_count = 0
+
+    def start_recording(self):
+        if self.is_recording:
+            return
+        if not self._check_server():
+            self._show_error("推理服务器未启动，请先在 Termux 运行 inference_server.py")
             return
 
-        # 检查推理服务器是否可用
-        if not self._check_inference_server():
-            self.server.publish_status(error="推理服务器未启动，请先在 Termux 中运行 inference_server.py")
-            return
-
-        logger.info(">>> 开始录音")
-        self._recording = True
+        self.is_recording = True
+        self.start_time = time.time()
         self._stop_event.clear()
         self.processor.reset()
 
-        # 启动 Android 音频采集
-        if _HAS_ANDROID:
-            logger.info("使用 Android AudioRecord 采集")
-            self.capture = AndroidAudioCapture()
-        else:
-            logger.info("使用桌面版音频采集")
-            self.capture = AudioCapture()
+        self.btn_rec.text = "停止"
+        self.btn_rec.background_color = RED
+        self.st_label.text = "录音中"
+        self.st_label.color = GREEN
+        self.dot.color = GREEN
 
-        self.capture.start()
+        self.on_clear(None)
 
-        # 启动处理线程
-        self._processing_thread = threading.Thread(
-            target=self._process_loop,
-            name="Android-Processor",
-            daemon=True,
-        )
-        self._processing_thread.start()
-
-        self.server.publish_status(is_recording=True)
-        logger.info("录音流水线已启动")
-
-    def _on_stop_recording(self):
-        if not self._recording:
+        try:
+            if _HAS_ANDROID:
+                self.capture = AndroidAudioCapture()
+            else:
+                self._show_error("非 Android 环境")
+                self.stop_recording()
+                return
+            self.capture.start()
+        except Exception as e:
+            logger.error("启动音频采集失败: %s", e)
+            self._show_error(f"启动失败: {e}")
+            self.stop_recording()
             return
 
-        logger.info("<<< 停止录音")
-        self._recording = False
+        self._processing_thread = threading.Thread(target=self._loop, daemon=True)
+        self._processing_thread.start()
+        self._timer_event = Clock.schedule_interval(self._tick, 0.2)
+        logger.info("录音已启动")
+
+    def stop_recording(self):
+        if not self.is_recording:
+            return
+        self.is_recording = False
         self._stop_event.set()
 
         if self.capture:
-            self.capture.stop()
+            try:
+                self.capture.stop()
+            except Exception:
+                pass
             self.capture = None
 
-        if self._processing_thread and self._processing_thread.is_alive():
-            self._processing_thread.join(timeout=3.0)
+        if self._timer_event:
+            self._timer_event.cancel()
+            self._timer_event = None
 
-        self._processing_thread = None
-        self.server.publish_status(is_recording=False)
+        self.btn_rec.text = "开始"
+        self.btn_rec.background_color = GREEN
+        self.st_label.text = "已停止"
+        self.st_label.color = DIM
+        self.dot.color = DIM
+        logger.info("录音已停止")
 
-    def _on_clear_results(self):
-        self.processor.reset()
-        logger.info("结果已清空")
-
-    # ── 核心处理循环 ──────────────────────────────────
-
-    def _process_loop(self):
-        """音频采集 -> 发送推理 -> 显示结果。"""
-        logger.info("处理线程已启动")
-
-        while self._recording and not self._stop_event.is_set():
+    # ─── 处理循环 ────────────────────────────────
+    def _loop(self):
+        while self.is_recording and not self._stop_event.is_set():
             try:
-                chunk = self._safe_get_chunk()
+                chunk = self.capture.get_chunk(timeout=0.5) if self.capture and self.capture.is_running else None
                 if chunk is None:
+                    time.sleep(0.05)
                     continue
-
-                # VAD 预处理
-                processed = self.processor.process(chunk)
-                self.server.publish_status(level=processed.level_db)
-
-                if not processed.has_speech:
-                    continue
-
-                # 发送到推理服务器
-                text = self._transcribe(processed.audio)
-                if text:
-                    self.server.publish_translation(
-                        text=text,
-                        segment_id=processed.segment_id,
-                        is_interim=processed.is_segment_end is False,
-                    )
-
+                p = self.processor.process(chunk)
+                Clock.schedule_once(lambda dt: setattr(self.lbar, "level", min(100, max(0, (p.level_db + 60) / 60 * 100))))
+                if p.has_speech:
+                    text = self._transcribe(p.audio)
+                    if text:
+                        Clock.schedule_once(lambda dt, t=text, sid=p.segment_id: self._add(t, sid))
             except Exception as e:
-                logger.error(f"处理循环异常: {e}")
+                logger.error("处理异常: %s", e)
                 time.sleep(0.1)
+        logger.info("处理线程退出")
 
-        logger.info("处理线程已退出")
-
-    def _transcribe(self, wav_bytes: bytes) -> Optional[str]:
-        """发送音频到推理服务器，返回识别文本。"""
+    def _transcribe(self, wav):
         try:
-            import urllib.request
-            import json
-
-            # Base64 编码 WAV 数据
-            wav_b64 = base64.b64encode(wav_bytes).decode()
-
-            # POST 到推理服务器
-            req_data = json.dumps({"wav": wav_b64}).encode()
-            req = urllib.request.Request(
-                f"{self.inference_url}/transcribe",
-                data=req_data,
-                headers={"Content-Type": "application/json"},
-            )
-
-            with urllib.request.urlopen(req, timeout=10) as resp:
-                result = json.loads(resp.read())
-                text = result.get("text", "")
-                return text.strip() or None
-
+            d = json.dumps({"wav": base64.b64encode(wav).decode()}).encode()
+            req = urllib.request.Request(f"{INFERENCE_URL}/transcribe", data=d,
+                                         headers={"Content-Type": "application/json"})
+            with urllib.request.urlopen(req, timeout=10) as r:
+                t = json.loads(r.read()).get("text", "").strip()
+            return t or None
         except Exception as e:
-            logger.warning(f"推理请求失败: {e}")
-            return None
+            logger.warning("推理请求失败: %s", e)
+        return None
 
-    def _check_inference_server(self) -> bool:
-        """检查推理服务器是否在线。"""
+    def _check_server(self):
         try:
-            import urllib.request
-            import json
-
-            req = urllib.request.Request(f"{self.inference_url}/health")
-            with urllib.request.urlopen(req, timeout=3) as resp:
-                data = json.loads(resp.read())
-                return data.get("status") == "ok"
+            req = urllib.request.Request(f"{INFERENCE_URL}/health")
+            with urllib.request.urlopen(req, timeout=3) as r:
+                return json.loads(r.read()).get("status") == "ok"
         except Exception:
             return False
 
-    def _safe_get_chunk(self, timeout: float = 0.5) -> Optional[bytes]:
-        try:
-            if self.capture and self.capture.is_running:
-                return self.capture.get_chunk(timeout=timeout)
-        except Exception as e:
-            logger.warning(f"获取音频块失败: {e}")
-        return None
+    # ─── UI 更新 ────────────────────────────────
+    def _tick(self, _):
+        t = int(time.time() - self.start_time)
+        self.timer.text = f"{t // 60:02d}:{t % 60:02d}"
 
-    @property
-    def is_recording(self) -> bool:
-        return self._recording
+    def _add(self, text, seg_id):
+        if self.empty_lbl in self.res_grid.children:
+            self.res_grid.remove_widget(self.empty_lbl)
+        # 去重
+        if self.last_text and (text.startswith(self.last_text) or self.last_text.startswith(text)):
+            last = list(self.res_grid.children)[-1]
+            if isinstance(last, Label):
+                last.text = text
+                last.color = TEXT
+                self.last_text = text
+            return
+        lbl = Label(text=text, color=TEXT, font_size=dp(18), halign="left", valign="middle",
+                    size_hint_y=None, text_size=(Window.width - dp(24), None))
+        lbl.bind(texture_size=lambda *x: setattr(lbl, "height", max(dp(40), lbl.texture_size[1] + dp(8))))
+        self.res_grid.add_widget(lbl)
+        self.results_count += 1
+        self.last_text = text
+        Clock.schedule_once(lambda dt: setattr(self.parent if hasattr(self, "parent") else None,
+                                                "scroll_y", 0) if False else None, 0.05)
+        # scroll to bottom
+        sv = self.parent if isinstance(self.parent, ScrollView) else None
+        if sv:
+            Clock.schedule_once(lambda dt: setattr(sv, "scroll_y", 0), 0.05)
 
-
-# ── 入口 ──────────────────────────────────────────────
-def main():
-    import sys
-
-    logger.info("=" * 50)
-    logger.info("粤语实时翻译 - Android 版")
-    logger.info(f"推理服务器: {INFERENCE_URL}")
-    logger.info("=" * 50)
-
-    transcriber = AndroidTranscriber(
-        host="127.0.0.1",
-        port=5000,
-        inference_url=INFERENCE_URL,
-    )
-
-    # 注册信号处理（Android 上 signal 支持不完整，忽略异常）
-    try:
-        import signal
-        def handle_signal(sig, frame):
-            logger.info("正在停止服务...")
-            if transcriber.is_recording:
-                transcriber._on_stop_recording()
-            sys.exit(0)
-        signal.signal(signal.SIGINT, handle_signal)
-        signal.signal(signal.SIGTERM, handle_signal)
-    except Exception:
-        pass
-
-    transcriber.run()
+    def _show_error(self, msg):
+        logger.error(msg)
+        lbl = Label(text=msg, color=RED, font_size=dp(14), size_hint_y=None, height=dp(30))
+        self.res_grid.add_widget(lbl)
+        Clock.schedule_once(lambda dt: self.res_grid.remove_widget(lbl) if lbl in self.res_grid.children else None, 4)
 
 
+# ============================================================
+# App
+# ============================================================
+
+class TranslatorApp(App):
+    def build(self):
+        self.title = "粤语实时翻译"
+        Window.clearcolor = BG
+        return TranslatorUI()
+
+    def on_start(self):
+        logger.info("应用已启动 | 日志: %s", _CRASH_LOG_PATH)
+
+
+# ============================================================
+# 入口
+# ============================================================
 if __name__ == "__main__":
     try:
-        # 记录启动信息
-        logger.info("APK 启动，Python: %s, 平台: %s", sys.version, sys.platform)
-        main()
+        logger.info("=" * 40)
+        logger.info("粤语实时翻译 - Kivy Android")
+        logger.info("推理: %s | 日志: %s", INFERENCE_URL, _CRASH_LOG_PATH)
+        logger.info("=" * 40)
+        TranslatorApp().run()
     except Exception as e:
-        # 兜底：任何未捕获异常都写入崩溃日志
         _write_crash_log(type(e), e, e.__traceback__)
-        # 尝试保持进程存活 5 秒，让日志写入完成
         time.sleep(5)

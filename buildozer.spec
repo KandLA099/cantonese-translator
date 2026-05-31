@@ -7,22 +7,22 @@ package.domain = com.cantonesetranslator
 
 # 源代码配置
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas,html,js,css,json
+source.include_exts = py,png,jpg,kv,atlas
 source.exclude_exts = spec,ide,sh,bat,txt,md
 source.exclude_dirs = __pycache__, .git, .vscode, recipes
 
-# 排除桌面版文件（依赖 onnxruntime，APK 中不可用会闪退）
-source.exclude = main_desktop.py, main_android.py, asr_engine.py, asr_engine_android.py, inference_server.py
+# 排除桌面版和 Web 服务器文件（不需要打包进 APK）
+source.exclude = main_desktop.py, main_android.py, asr_engine.py, asr_engine_android.py, inference_server.py, web_server.py, templates, static
 
 # 应用版本
 version = 0.1
-version.code = 1
+version.code = 2
 
 # 依赖（python-for-android 会自动处理这些）
 # onnxruntime 没有 Android wheel，推理跑在 Termux 独立进程
-requirements = python3, flask, flask-socketio, numpy, pyjnius, werkzeug
+requirements = python3, pyjnius, numpy, kivy
 
-# 权限（录音 + 网络 + 本地通信 + 外部存储写日志）
+# 权限（录音 + 网络 + 存储）
 android.permissions = RECORD_AUDIO, INTERNET, ACCESS_NETWORK_STATE, WRITE_EXTERNAL_STORAGE
 
 # Android API 配置
@@ -42,7 +42,7 @@ orientation = portrait
 # Python-for-android 配置
 p4a.branch = develop
 p4a.allow_presplash = True
-p4a.bootstrap = webview
+p4a.bootstrap = sdl2
 
 [buildozer]
 
