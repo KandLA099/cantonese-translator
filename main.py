@@ -42,31 +42,48 @@ from kivy.uix.widget import Widget
 from kivy.utils import get_color_from_hex
 
 # ── 崩溃日志捕获 ──────────────────────────────────────
-def _get_log_path():
-    for path in [
+def _get_log_paths():
+    """返回所有可能的日志路径（全部尝试写入）。"""
+    pkg = "com.cantonesetranslator"
+    return [
         os.environ.get("ANDROID_PRIVATE"),
+        f"/storage/emulated/0/Android/data/{pkg}/files",
         os.environ.get("EXTERNAL_STORAGE"),
         "/data/local/tmp",
         "/sdcard",
-    ]:
-        if path and os.access(path, os.W_OK):
-            return os.path.join(path, "cantonese_crash.log")
-    return "/data/local/tmp/cantonese_crash.log"
+    ]
 
-_CRASH_LOG_PATH = _get_log_path()
+def _try_write_log(path, text):
+    if not path:
+        return False
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(text)
+        return True
+    except Exception:
+        return False
 
 def _write_crash_log(exc_type, exc_value, exc_tb):
     tb_text = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    # stdout 输出（adb logcat 可见）
     print(f"\n!!!!! CRASH {exc_type.__name__}: {exc_value}", flush=True)
     for line in tb_text.splitlines():
         print(f"[CRASH] {line}", flush=True)
-    try:
-        with open(_CRASH_LOG_PATH, "a", encoding="utf-8") as f:
-            f.write(f"\n{'='*60}\nCRASH at {time.strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"[PID {os.getpid()}] {exc_type.__name__}: {exc_value}\n{'='*60}\n")
-            f.write(tb_text + "\n")
-    except Exception:
-        pass
+    # 写入所有可能的路径
+    text = f"\n{'='*60}\nCRASH at {time.strftime('%Y-%m-%d %H:%M:%S')}\n"
+    text += f"[PID {os.getpid()}] {exc_type.__name__}: {exc_value}\n{'='*60}\n"
+    text += tb_text + "\n"
+    for p in _get_log_paths():
+        if p:
+            _try_write_log(os.path.join(p, "cantonese_crash.log"), text)
+
+# 立即写一个启动标记（证明 Python 启动到了这里）
+_MARKERS_WRITTEN = 0
+for _p in _get_log_paths():
+    if _p and _try_write_log(os.path.join(_p, "cantonese_started.txt"),
+                              f"STARTED at {time.strftime('%Y-%m-%d %H:%M:%S')}\n"):
+        _MARKERS_WRITTEN += 1
 
 sys.excepthook = _write_crash_log
 
@@ -74,12 +91,16 @@ sys.excepthook = _write_crash_log
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("main")
 
-try:
-    _fh = logging.FileHandler(_CRASH_LOG_PATH, encoding="utf-8")
-    _fh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
-    logging.getLogger().addHandler(_fh)
-except Exception:
-    pass
+# 日志也写入文件
+for _p in _get_log_paths():
+    if _p:
+        try:
+            _fh = logging.FileHandler(os.path.join(_p, "cantonese_crash.log"), encoding="utf-8")
+            _fh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+            logging.getLogger().addHandler(_fh)
+            break
+        except Exception:
+            continue
 
 # ── 配置 ──────────────────────────────────────────────
 INFERENCE_URL = f"http://{os.environ.get('INFERENCE_HOST', '127.0.0.1')}:{os.environ.get('INFERENCE_PORT', '5001')}"
@@ -391,7 +412,7 @@ class TranslatorApp(App):
         return TranslatorUI()
 
     def on_start(self):
-        logger.info("应用已启动 | 日志: %s", _CRASH_LOG_PATH)
+        logger.info("应用已启动 | 启动标记写入: %d 个路径", _MARKERS_WRITTEN)
 
 
 # ============================================================
@@ -401,7 +422,8 @@ if __name__ == "__main__":
     try:
         logger.info("=" * 40)
         logger.info("粤语实时翻译 - Kivy Android")
-        logger.info("推理: %s | 日志: %s", INFERENCE_URL, _CRASH_LOG_PATH)
+        logger.info("推理: %s", INFERENCE_URL)
+        logger.info("启动标记写入路径: %d/5", _MARKERS_WRITTEN)
         logger.info("=" * 40)
         TranslatorApp().run()
     except Exception as e:
