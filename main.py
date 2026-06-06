@@ -34,12 +34,17 @@ os.environ.setdefault("KIVY_NO_CONSOLELOG", "0")
 
 # ── 崩溃日志捕获 ──────────────────────────────────────────
 def _get_log_paths():
-    """返回所有可能的日志路径（全部尝试写入）。"""
+    """返回所有可能的日志路径（优先用户可见目录）。"""
     pkg = "com.cantonesetranslator"
     candidates = [
-        os.environ.get("ANDROID_PRIVATE"),
-        f"/storage/emulated/0/Android/data/{pkg}/files",
+        # 用户一定可见的目录（Android 10+ 仍允许应用写 Download）
+        f"/storage/emulated/0/Download/{pkg}",
+        "/sdcard/Download",
+        # 应用外部目录
         os.environ.get("EXTERNAL_STORAGE"),
+        f"/storage/emulated/0/Android/data/{pkg}/files",
+        os.environ.get("ANDROID_PRIVATE"),
+        # fallback
         os.environ.get("HOME"),
         os.path.expanduser("~"),
         "/data/local/tmp",
@@ -781,6 +786,12 @@ class TranslatorUI(BoxLayout):
         if self.is_recording:
             return
 
+        # 检查权限（Android 必须）
+        if is_android() and not self.app._check_permissions():
+            self.app._request_android_permissions()
+            self._show_error("请先授予麦克风权限，再点击开始")
+            return
+
         _lazy_load_modules()
 
         if not self._check_server():
@@ -1070,6 +1081,57 @@ class TranslatorApp(App):
         self.ui: Optional[TranslatorUI] = None
         self._settings = None
         self._theme = THEMES["dark"]
+        self._permissions_granted = False
+
+    def _request_android_permissions(self):
+        """运行时申请 Android 权限（RECORD_AUDIO + WRITE_EXTERNAL_STORAGE）。"""
+        if not is_android():
+            self._permissions_granted = True
+            return True
+        try:
+            from jnius import autoclass
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            activity = PythonActivity.mActivity
+            PackageManager = autoclass('android.content.pm.PackageManager')
+
+            # 检查哪些权限还没授予
+            needed = []
+            for perm in ["android.permission.RECORD_AUDIO",
+                         "android.permission.WRITE_EXTERNAL_STORAGE"]:
+                try:
+                    if activity.checkSelfPermission(perm) != PackageManager.PERMISSION_GRANTED:
+                        needed.append(perm)
+                except Exception:
+                    needed.append(perm)
+
+            if needed:
+                activity.requestPermissions(needed, 0)
+                logger.info("已申请权限: %s", needed)
+                return False
+            else:
+                self._permissions_granted = True
+                return True
+        except Exception as e:
+            logger.error("权限申请异常: %s", e)
+            return False
+
+    def _check_permissions(self):
+        """检查当前是否已授予必要权限。"""
+        if not is_android():
+            return True
+        try:
+            from jnius import autoclass
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            activity = PythonActivity.mActivity
+            PackageManager = autoclass('android.content.pm.PackageManager')
+            for perm in ["android.permission.RECORD_AUDIO",
+                         "android.permission.WRITE_EXTERNAL_STORAGE"]:
+                if activity.checkSelfPermission(perm) != PackageManager.PERMISSION_GRANTED:
+                    return False
+            self._permissions_granted = True
+            return True
+        except Exception:
+            return False
 
     @property
     def theme(self) -> Dict[str, Any]:
@@ -1108,6 +1170,17 @@ class TranslatorApp(App):
 
     def on_start(self):
         logger.info("应用已启动 | 启动标记写入: %d 个路径", _MARKERS_WRITTEN)
+        # 启动时自动申请权限
+        if is_android() and not self._permissions_granted:
+            self._request_android_permissions()
+            # 延迟再次检查权限状态（给用户点击"允许"的时间）
+            Clock.schedule_once(lambda dt: self._recheck_permissions(), 2.0)
+
+    def _recheck_permissions(self):
+        """延迟检查权限，如果仍未授予则提示用户。"""
+        if is_android() and not self._check_permissions():
+            if self.ui:
+                self.ui._show_error("需要麦克风权限才能录音，请在系统设置中开启")
 
     def on_stop(self):
         if self.ui and self.ui.is_recording:
