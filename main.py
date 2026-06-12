@@ -599,14 +599,16 @@ class TranslatorUI(BoxLayout):
         st_box.add_widget(self.status_dot)
         st_box.add_widget(self.st_label)
 
-        self.timer_lbl = Label(
+        timer_kwargs = dict(
             text="00:00",
             color=self.theme["text"],
             font_size=dp(22),
             bold=True,
             size_hint_x=0.35,
-            font_name="RobotoMono-Regular" if self._has_monospace() else None,
         )
+        if self._has_monospace():
+            timer_kwargs["font_name"] = "RobotoMono-Regular"
+        self.timer_lbl = Label(**timer_kwargs)
 
         self.lbar = LevelBar(
             theme=self.theme, size_hint_x=0.4, size_hint_y=None, height=dp(40)
