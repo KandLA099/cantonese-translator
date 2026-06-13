@@ -342,18 +342,25 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(404)
 
 
-# ── 入口 ─────────────────────────────────────────────────
-def main():
+# ── 入口（模块级别直接启动，p4a 不以 __main__ 运行）────
+def _run_server():
+    """启动 HTTP 服务器，保持运行。"""
     logger.info("=" * 50)
     logger.info("粤语实时翻译 — webview 版")
     logger.info(f"推理服务器: {INFERENCE_URL}")
-    logger.info(f"HTTP 服务器: http://localhost:{HTTP_PORT}")
+    logger.info(f"HTTP 服务器: 0.0.0.0:{HTTP_PORT}")
     logger.info("=" * 50)
 
-    server = ThreadedHTTPServer(("localhost", HTTP_PORT), Handler)
-    server_thread = threading.Thread(target=server.serve_forever, daemon=True)
-    server_thread.start()
-    logger.info("HTTP 服务器已启动")
+    try:
+        # 绑定到 0.0.0.0 确保 WebView 能访问
+        server = ThreadedHTTPServer(("0.0.0.0", HTTP_PORT), Handler)
+        server_thread = threading.Thread(target=server.serve_forever, daemon=True)
+        server_thread.start()
+        logger.info("HTTP 服务器已启动在 0.0.0.0:%d", HTTP_PORT)
+    except Exception as e:
+        logger.error("启动 HTTP 服务器失败: %s", e)
+        _write_crash(type(e), e, e.__traceback__)
+        return
 
     try:
         while True:
@@ -365,9 +372,9 @@ def main():
         _recorder.stop()
 
 
-if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        _write_crash(type(e), e, e.__traceback__)
-        time.sleep(5)
+# p4a webview bootstrap 导入时直接启动（不是 __main__）
+try:
+    _run_server()
+except Exception as e:
+    _write_crash(type(e), e, e.__traceback__)
+    time.sleep(5)
