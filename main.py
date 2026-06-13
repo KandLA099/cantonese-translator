@@ -123,6 +123,55 @@ from kivy.uix.widget import Widget
 from kivy.animation import Animation
 from kivy.utils import get_color_from_hex
 
+# ── 中文字体注册（必须在 widget 创建前）────────────────────
+def _find_chinese_font() -> str:
+    """在 Android/PC 上查找支持中文的字体文件。"""
+    candidates = [
+        # Android 系统字体（按优先级）
+        "/system/fonts/NotoSansCJK-Regular.ttc",
+        "/system/fonts/NotoSansCJKsc-Regular.otf",
+        "/system/fonts/NotoSansSC-Regular.otf",
+        "/system/fonts/DroidSansFallback.ttf",
+        "/system/fonts/NotoSansCJKjp-Regular.otf",
+        # 部分国产 ROM
+        "/system/fonts/MiSans-Regular.ttf",
+        "/system/fonts/HarmonyOS_Sans-Regular.ttf",
+        # PC 常见路径
+        "C:/Windows/Fonts/msyh.ttc",
+        "C:/Windows/Fonts/simhei.ttf",
+        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+    ]
+    for path in candidates:
+        if path and os.path.exists(path):
+            return path
+    return ""
+
+def _register_chinese_font():
+    """注册中文字体为 Kivy 默认字体。"""
+    font_path = _find_chinese_font()
+    if not font_path:
+        logger.warning("未找到中文字体，中文将显示为方块")
+        return
+    try:
+        from kivy.core.text import LabelBase
+        from kivy.lang import Builder
+        LabelBase.register(name="ChineseFont", fn_regular=font_path)
+        # 通过 KV 默认样式让所有 Label/Button/TextInput 使用中文
+        Builder.load_string("""
+<Label>:
+    font_name: 'ChineseFont'
+<Button>:
+    font_name: 'ChineseFont'
+<TextInput>:
+    font_name: 'ChineseFont'
+""")
+        logger.info("中文字体已注册: %s", font_path)
+    except Exception as e:
+        logger.warning("注册中文字体失败: %s", e)
+
+_register_chinese_font()
+
 # ── 配置 ──────────────────────────────────────────────────
 INFERENCE_HOST = os.environ.get("INFERENCE_HOST", "127.0.0.1")
 INFERENCE_PORT = os.environ.get("INFERENCE_PORT", "5001")
