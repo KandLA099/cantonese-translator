@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#1a1a2e">
+<title>粤语实时翻译</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div id="app">
+  <!-- 顶栏 -->
+  <header class="top-bar">
+    <div class="status-indicator" id="statusDot"></div>
+    <div class="timer" id="timer">00:00</div>
+    <div class="audio-bar">
+      <div class="audio-track"><div class="audio-fill" id="audioFill"></div></div>
+    </div>
+    <button class="icon-btn" id="settingsBtn" title="设置">&#9881;</button>
+  </header>
+
+  <!-- 结果区 -->
+  <main class="results-area" id="resultsArea">
+    <div class="empty-state" id="emptyState">
+      <div class="empty-icon">&#127908;</div>
+      <div class="empty-text">点击「开始」开始录音</div>
+    </div>
+    <div class="results-list" id="resultsList"></div>
+  </main>
+
+  <!-- 底栏 -->
+  <footer class="bottom-bar">
+    <button class="btn btn-clear" id="clearBtn">清空</button>
+    <button class="btn btn-start" id="startBtn">开始</button>
+    <button class="btn btn-stop" id="stopBtn" style="display:none">停止</button>
+  </footer>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

@@ -7,23 +7,23 @@ package.domain = com.cantonesetranslator
 
 # 源代码配置
 source.dir = .
-source.include_exts = py,png,jpg,kv,atlas
+source.include_exts = py,png,jpg,html,js,css,kv,atlas
 source.exclude_exts = spec,ide,sh,bat,txt,md
 source.exclude_dirs = __pycache__, .git, .vscode, recipes, templates, static
 
-# 排除桌面版、Web 服务器及废弃文件（不需要打包进 APK）
-source.exclude = main_desktop.py, main_android.py, asr_engine.py, asr_engine_android.py, inference_server.py, web_server.py
+# 排除不需要打包的文件
+source.exclude = main_desktop.py, main_android.py, main_kivy_bak.py, asr_engine.py, asr_engine_android.py, audio_capture.py, audio_processor.py, inference_server.py, web_server.py, history.py, settings.py, utils.py, test_qa_validation.py, QA_REPORT.md
 
 # 应用版本
-version = 0.2.0
-version.code = 3
+version = 0.3.0
+version.code = 4
 
-# 依赖（python-for-android 会自动处理这些）
-# onnxruntime 没有 Android wheel，推理跑在 Termux 独立进程
-requirements = python3, pyjnius, numpy, kivy
+# 依赖（极简：webview bootstrap 不需要 Kivy）
+# 前端用 HTML/JS，Python 只用标准库 http.server + pyjnius 录音
+requirements = python3, pyjnius, numpy
 
-# 权限（录音 + 网络 + 存储）
-android.permissions = RECORD_AUDIO, INTERNET, ACCESS_NETWORK_STATE, WRITE_EXTERNAL_STORAGE, READ_EXTERNAL_STORAGE, FOREGROUND_SERVICE
+# 权限（录音 + 网络）
+android.permissions = RECORD_AUDIO, INTERNET, ACCESS_NETWORK_STATE
 
 # Android API 配置
 android.api = 34
@@ -42,7 +42,8 @@ orientation = all
 # Python-for-android 配置
 p4a.branch = develop
 p4a.allow_presplash = True
-p4a.bootstrap = sdl2
+p4a.bootstrap = webview
+p4a.webview_url = http://localhost:8080
 
 [buildozer]
 
